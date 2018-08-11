@@ -1,5 +1,13 @@
+#[macro_use]
+extern crate lazy_static;
+extern crate rand;
 extern crate raylib_rs;
+extern crate regex;
+extern crate string_cache;
+
 use raylib_rs as ray;
+
+mod ceptre;
 
 use std::cell::RefCell;
 use std::os::raw::{c_int, c_void};

@@ -5,4 +5,8 @@ authors = ["t-mw <contact@tmwhere.com>"]
 build = "build.rs"
 
 [dependencies]
+lazy_static = "1.0.0"
+rand = "0.3.17"
 raylib-rs = { git = "https://github.com/t-mw/raylib-rs.git" }
+regex = "0.2.6"
+string_cache = "0.7"
