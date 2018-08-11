@@ -152,8 +152,8 @@ impl StringCache {
     }
 
     pub fn to_atom(&mut self, text: &str) -> Atom {
-        if let Some(atom) = self.string_to_atom.get(text) {
-            return *atom;
+        if let Some(atom) = self.to_existing_atom(text) {
+            return atom;
         }
 
         let idx = self.atom_to_string.len();
@@ -163,6 +163,10 @@ impl StringCache {
         self.string_to_atom.insert(text.to_string(), atom);
 
         atom
+    }
+
+    pub fn to_existing_atom(&self, text: &str) -> Option<Atom> {
+        self.string_to_atom.get(text).cloned()
     }
 
     pub fn from_atom<'a>(&'a self, atom: Atom) -> &'a str {
@@ -318,6 +322,10 @@ impl Context {
         self.string_cache.to_atom(text)
     }
 
+    pub fn to_existing_atom(&self, text: &str) -> Option<Atom> {
+        self.string_cache.to_existing_atom(text)
+    }
+
     pub fn append_state(&mut self, text: &str) {
         self.state.push(tokenize(text, &mut self.string_cache));
     }
@@ -337,6 +345,62 @@ impl Context {
         for r in rules {
             println!("{}", r);
         }
+    }
+
+    pub fn find_phrase<'a>(&'a self, first: Option<&str>) -> Option<&'a Phrase> {
+        self.find_phrase2(first, None)
+    }
+
+    pub fn find_phrase2<'a>(
+        &'a self,
+        first: Option<&str>,
+        second: Option<&str>,
+    ) -> Option<&'a Phrase> {
+        let atom1 = first.and_then(|s| self.to_existing_atom(s));
+        let atom2 = second.and_then(|s| self.to_existing_atom(s));
+
+        for p in self.state.iter() {
+            match (p.get(0).map(|t| &t.string), p.get(1).map(|t| &t.string)) {
+                (s1, s2)
+                    if (atom1.is_none() || s1 == atom1.as_ref())
+                        && (atom2.is_none() || s2 == atom2.as_ref()) =>
+                {
+                    return Some(p);
+                }
+                _ => (),
+            };
+        }
+
+        return None;
+    }
+
+    pub fn find_phrases<'a>(&'a self, first: Option<&str>) -> Vec<&'a Phrase> {
+        self.find_phrases2(first, None)
+    }
+
+    pub fn find_phrases2<'a>(
+        &'a self,
+        first: Option<&str>,
+        second: Option<&str>,
+    ) -> Vec<&'a Phrase> {
+        let atom1 = first.and_then(|s| self.to_existing_atom(s));
+        let atom2 = second.and_then(|s| self.to_existing_atom(s));
+
+        return self
+            .state
+            .iter()
+            .filter(
+                |p| match (p.get(0).map(|t| &t.string), p.get(1).map(|t| &t.string)) {
+                    (s1, s2)
+                        if (atom1.is_none() || s1 == atom1.as_ref())
+                            && (atom2.is_none() || s2 == atom2.as_ref()) =>
+                    {
+                        true
+                    }
+                    _ => false,
+                },
+            )
+            .collect();
     }
 }
 
