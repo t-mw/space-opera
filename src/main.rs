@@ -19,7 +19,13 @@ fn main() {
 
     ray::play_music_stream(state.music);
 
-    set_main_loop_callback(|| update_draw_frame(&mut state));
+    if cfg!(target_os = "emscripten") {
+        set_main_loop_callback(|| update_draw_frame(&mut state));
+    } else {
+        while !ray::window_should_close() {
+            update_draw_frame(&mut state);
+        }
+    }
 
     ray::close_window();
 }
@@ -62,4 +68,15 @@ where
         let closure = *z.borrow_mut() as *mut F;
         (*closure)();
     });
+}
+
+#[cfg(target_os = "macos")]
+mod mac {
+    #[link(kind = "static", name = "raylib")]
+    #[link(kind = "framework", name = "OpenGL")]
+    #[link(kind = "framework", name = "Cocoa")]
+    #[link(kind = "framework", name = "IOKit")]
+    #[link(kind = "framework", name = "GLUT")]
+    #[link(kind = "framework", name = "CoreVideo")]
+    extern "C" {}
 }

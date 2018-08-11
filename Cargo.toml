@@ -2,6 +2,7 @@
 name = "ld42"
 version = "0.1.0"
 authors = ["t-mw <contact@tmwhere.com>"]
+build = "build.rs"
 
 [dependencies]
 raylib-rs = { git = "https://github.com/t-mw/raylib-rs.git" }
