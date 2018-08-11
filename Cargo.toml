@@ -1,0 +1,6 @@
+[package]
+name = "ld42"
+version = "0.1.0"
+authors = ["t-mw <contact@tmwhere.com>"]
+
+[dependencies]
