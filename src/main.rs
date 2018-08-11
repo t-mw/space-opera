@@ -3,7 +3,6 @@ extern crate lazy_static;
 extern crate rand;
 extern crate raylib_rs;
 extern crate regex;
-extern crate string_cache;
 
 use raylib_rs as ray;
 

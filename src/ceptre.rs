@@ -2,10 +2,15 @@ use rand;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use regex::Regex;
-use string_cache::DefaultAtom as Atom;
 
+use std::collections::HashMap;
 use std::iter;
 use std::vec::Vec;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Atom {
+    idx: usize,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum BackwardsPred {
@@ -39,7 +44,12 @@ impl PartialEq for Token {
 impl Eq for Token {}
 
 impl Token {
-    fn new(string: &str, open_depth: i32, close_depth: i32) -> Token {
+    fn new(
+        string: &str,
+        open_depth: i32,
+        close_depth: i32,
+        string_cache: &mut StringCache,
+    ) -> Token {
         let mut string = string;
 
         let mut is_negated = false;
@@ -73,8 +83,10 @@ impl Token {
             _ => None,
         };
 
+        let atom = string_cache.to_atom(string);
+
         Token {
-            string: Atom::from(string),
+            string: atom,
             backwards_pred,
             is_var,
             is_negated,
@@ -83,6 +95,10 @@ impl Token {
             open_depth,
             close_depth,
         }
+    }
+
+    pub fn as_str<'a>(&self, string_cache: &'a StringCache) -> &'a str {
+        string_cache.from_atom(self.string)
     }
 }
 
@@ -117,8 +133,41 @@ impl Rule {
 pub struct Context {
     rules: Vec<Rule>,
     pub state: Vec<Phrase>,
+    pub string_cache: StringCache,
     quiescence: bool,
     rng: SmallRng,
+}
+
+pub struct StringCache {
+    atom_to_string: Vec<String>,
+    string_to_atom: HashMap<String, Atom>,
+}
+
+impl StringCache {
+    pub fn new() -> StringCache {
+        StringCache {
+            atom_to_string: vec![],
+            string_to_atom: HashMap::new(),
+        }
+    }
+
+    pub fn to_atom(&mut self, text: &str) -> Atom {
+        if let Some(atom) = self.string_to_atom.get(text) {
+            return *atom;
+        }
+
+        let idx = self.atom_to_string.len();
+        let atom = Atom { idx };
+
+        self.atom_to_string.push(text.to_string());
+        self.string_to_atom.insert(text.to_string(), atom);
+
+        atom
+    }
+
+    pub fn from_atom<'a>(&'a self, atom: Atom) -> &'a str {
+        &self.atom_to_string[atom.idx]
+    }
 }
 
 impl Context {
@@ -126,7 +175,9 @@ impl Context {
         let text = text.replace("()", "qui");
         let lines = text.split("\n");
 
-        let parse_rule = |id: i32, string: &str| {
+        let mut string_cache = StringCache::new();
+
+        let parse_rule = |id: i32, string: &str, string_cache: &mut StringCache| {
             let mut r = string.split(" =");
 
             let (dollars, inputs): (Vec<_>, Vec<_>) = r
@@ -148,10 +199,13 @@ impl Context {
                 .iter()
                 .chain(dollars.iter())
                 .cloned()
-                .map(tokenize)
+                .map(|s| tokenize(s, string_cache))
                 .collect();
 
-            let outputs = outputs.chain(dollars).map(tokenize).collect();
+            let outputs = outputs
+                .chain(dollars)
+                .map(|s| tokenize(s, string_cache))
+                .collect();
 
             return Rule::new_with_id(id, inputs, outputs);
         };
@@ -165,17 +219,21 @@ impl Context {
                 .map(|caps| caps.get(1).unwrap().as_str().trim())
         };
 
-        let get_init = |line: &String| {
+        let get_init = |line: &String, string_cache: &mut StringCache| {
             if !line.contains(" =") && !line.is_empty() {
-                return Some(line.split(" . ").map(tokenize).collect::<Vec<_>>());
+                return Some(
+                    line.split(" . ")
+                        .map(|s| tokenize(s, string_cache))
+                        .collect::<Vec<_>>(),
+                );
             } else {
                 return None;
             }
         };
 
-        let get_rule = |(i, line): (usize, &String)| {
+        let get_rule = |(i, line): (usize, &String), string_cache: &mut StringCache| {
             if line.contains(" =") && !line.is_empty() {
-                return Some(parse_rule(i as i32, line));
+                return Some(parse_rule(i as i32, line, string_cache));
             } else {
                 return None;
             }
@@ -213,7 +271,7 @@ impl Context {
 
         let state = out_lines
             .iter()
-            .map(get_init)
+            .map(|l| get_init(l, &mut string_cache))
             .filter(|v| v.is_some())
             .flat_map(|v| v.expect("v"))
             .collect::<Vec<_>>();
@@ -221,7 +279,7 @@ impl Context {
         let rules = out_lines
             .iter()
             .enumerate()
-            .map(get_rule)
+            .map(|l| get_rule(l, &mut string_cache))
             .filter(|v| v.is_some())
             .map(|v| v.expect("v"))
             .collect::<Vec<_>>();
@@ -250,25 +308,30 @@ impl Context {
         Context {
             state,
             rules,
+            string_cache,
             quiescence: false,
             rng,
         }
     }
 
-    pub fn append_state(&mut self, text: &str) {
-        self.state.push(tokenize(text));
+    pub fn to_atom(&mut self, text: &str) -> Atom {
+        self.string_cache.to_atom(text)
     }
 
-    pub fn to_atom(&self, text: &str) -> Atom {
-        Atom::from(text)
+    pub fn append_state(&mut self, text: &str) {
+        self.state.push(tokenize(text, &mut self.string_cache));
     }
 
     pub fn print(&self) {
         println!("state:");
-        print_state(&self.state);
+        print_state(&self.state, &self.string_cache);
 
         println!("\nrules:");
-        let mut rules = self.rules.iter().map(rule_to_string).collect::<Vec<_>>();
+        let mut rules = self
+            .rules
+            .iter()
+            .map(|r| rule_to_string(r, &self.string_cache))
+            .collect::<Vec<_>>();
         rules.sort();
 
         for r in rules {
@@ -284,9 +347,7 @@ where
     let rules = &mut context.rules;
     let state = &mut context.state;
 
-    lazy_static! {
-        static ref QUI: Phrase = vec![Token::new("qui", 0, 0)];
-    }
+    let qui: Phrase = vec![Token::new("qui", 0, 0, &mut context.string_cache)];
 
     loop {
         let mut matching_rule = None;
@@ -299,7 +360,7 @@ where
         context.rng.shuffle(state);
 
         if context.quiescence {
-            state.push(QUI.clone());
+            state.push(qui.clone());
         }
 
         {
@@ -319,8 +380,13 @@ where
                     }
                 }
 
-                if let Some(rule) = rule_matches_state(&rule, &state, &mut context.rng, &side_input)
-                {
+                if let Some(rule) = rule_matches_state(
+                    &rule,
+                    &state,
+                    &mut context.rng,
+                    &side_input,
+                    &mut context.string_cache,
+                ) {
                     matching_rule = Some(rule);
                     break;
                 }
@@ -335,9 +401,9 @@ where
                     state
                         .iter()
                         .enumerate()
-                        .filter(|&(_, p)| **p == QUI[..])
+                        .filter(|&(_, p)| **p == qui[..])
                         .collect::<Vec<_>>()
-                        == vec![(state.len() - 1, &QUI.clone())],
+                        == vec![(state.len() - 1, &qui.clone())],
                     "expected 1 * () at end of state"
                 );
 
@@ -374,6 +440,7 @@ fn rule_matches_state<R, F>(
     state: &Vec<Phrase>,
     rng: &mut R,
     side_input: &F,
+    string_cache: &mut StringCache,
 ) -> Option<Rule>
 where
     R: Rng,
@@ -482,7 +549,8 @@ where
         }
 
         for input in backwards_pred.iter().map(|&i| &inputs[i]) {
-            let mut extra_matches = match_backwards_variables(input, &variables_matched);
+            let mut extra_matches =
+                match_backwards_variables(input, &variables_matched, string_cache);
 
             if let Some(ref mut extra_matches) = extra_matches {
                 variables_matched.append(extra_matches);
@@ -533,10 +601,14 @@ where
     return None;
 }
 
-fn match_backwards_variables(pred: &Phrase, existing_matches: &Vec<Match>) -> Option<Vec<Match>> {
+fn match_backwards_variables(
+    pred: &Phrase,
+    existing_matches: &Vec<Match>,
+    string_cache: &mut StringCache,
+) -> Option<Vec<Match>> {
     let pred = assign_vars(pred, existing_matches);
 
-    evaluate_backwards_pred(&pred).and_then(|eval_result| {
+    evaluate_backwards_pred(&pred, string_cache).and_then(|eval_result| {
         match_variables_with_existing(&pred, &eval_result, existing_matches)
     })
 }
@@ -615,31 +687,31 @@ fn is_negated_pred(tokens: &Phrase) -> bool {
     return tokens[0].is_negated;
 }
 
-fn evaluate_backwards_pred(tokens: &Phrase) -> Option<Phrase> {
+fn evaluate_backwards_pred(tokens: &Phrase, string_cache: &mut StringCache) -> Option<Phrase> {
     match tokens[0].backwards_pred {
         Some(BackwardsPred::Plus) => {
             use std::str::FromStr;
 
-            let n1 = f32::from_str(&tokens[1].string);
-            let n2 = f32::from_str(&tokens[2].string);
-            let n3 = f32::from_str(&tokens[3].string);
+            let n1 = f32::from_str(tokens[1].as_str(string_cache));
+            let n2 = f32::from_str(tokens[2].as_str(string_cache));
+            let n3 = f32::from_str(tokens[3].as_str(string_cache));
 
             return match (n1, n2, n3) {
                 (Ok(v1), Ok(v2), Err(_)) => Some(vec![
                     tokens[0].clone(),
                     tokens[1].clone(),
                     tokens[2].clone(),
-                    Token::new(&(v1 + v2).to_string(), 0, 1),
+                    Token::new(&(v1 + v2).to_string(), 0, 1, string_cache),
                 ]),
                 (Ok(v1), Err(_), Ok(v3)) => Some(vec![
                     tokens[0].clone(),
                     tokens[1].clone(),
-                    Token::new(&(v3 - v1).to_string(), 0, 0),
+                    Token::new(&(v3 - v1).to_string(), 0, 0, string_cache),
                     tokens[3].clone(),
                 ]),
                 (Err(_), Ok(v2), Ok(v3)) => Some(vec![
                     tokens[0].clone(),
-                    Token::new(&(v3 - v2).to_string(), 0, 0),
+                    Token::new(&(v3 - v2).to_string(), 0, 0, string_cache),
                     tokens[2].clone(),
                     tokens[3].clone(),
                 ]),
@@ -650,8 +722,8 @@ fn evaluate_backwards_pred(tokens: &Phrase) -> Option<Phrase> {
         Some(BackwardsPred::Lt) => {
             use std::str::FromStr;
 
-            let n1 = f32::from_str(&tokens[1].string);
-            let n2 = f32::from_str(&tokens[2].string);
+            let n1 = f32::from_str(tokens[1].as_str(string_cache));
+            let n2 = f32::from_str(tokens[2].as_str(string_cache));
 
             return match (n1, n2) {
                 (Ok(v1), Ok(v2)) if v1 < v2 => Some(tokens.clone()),
@@ -661,8 +733,8 @@ fn evaluate_backwards_pred(tokens: &Phrase) -> Option<Phrase> {
         Some(BackwardsPred::Gt) => {
             use std::str::FromStr;
 
-            let n1 = f32::from_str(&tokens[1].string);
-            let n2 = f32::from_str(&tokens[2].string);
+            let n1 = f32::from_str(tokens[1].as_str(string_cache));
+            let n2 = f32::from_str(tokens[2].as_str(string_cache));
 
             return match (n1, n2) {
                 (Ok(v1), Ok(v2)) if v1 > v2 => Some(tokens.clone()),
@@ -672,8 +744,8 @@ fn evaluate_backwards_pred(tokens: &Phrase) -> Option<Phrase> {
         Some(BackwardsPred::Lte) => {
             use std::str::FromStr;
 
-            let n1 = f32::from_str(&tokens[1].string);
-            let n2 = f32::from_str(&tokens[2].string);
+            let n1 = f32::from_str(tokens[1].as_str(string_cache));
+            let n2 = f32::from_str(tokens[2].as_str(string_cache));
 
             return match (n1, n2) {
                 (Ok(v1), Ok(v2)) if v1 <= v2 => Some(tokens.clone()),
@@ -683,8 +755,8 @@ fn evaluate_backwards_pred(tokens: &Phrase) -> Option<Phrase> {
         Some(BackwardsPred::Gte) => {
             use std::str::FromStr;
 
-            let n1 = f32::from_str(&tokens[1].string);
-            let n2 = f32::from_str(&tokens[2].string);
+            let n1 = f32::from_str(tokens[1].as_str(string_cache));
+            let n2 = f32::from_str(tokens[2].as_str(string_cache));
 
             return match (n1, n2) {
                 (Ok(v1), Ok(v2)) if v1 >= v2 => Some(tokens.clone()),
@@ -830,7 +902,7 @@ fn match_variables_with_existing(
     return Some(result);
 }
 
-fn tokenize(string: &str) -> Phrase {
+fn tokenize(string: &str, string_cache: &mut StringCache) -> Phrase {
     let mut string = format!("({})", string);
 
     lazy_static! {
@@ -882,7 +954,7 @@ fn tokenize(string: &str) -> Phrase {
             continue;
         }
 
-        result.push(Token::new(token, open_depth, close_depth));
+        result.push(Token::new(token, open_depth, close_depth, string_cache));
         open_depth = 0;
         close_depth = 0;
     }
@@ -990,15 +1062,17 @@ struct IterRandState<'a, T: 'a> {
     _slice: &'a [T],
 }
 
-fn build_phrase(phrase: &Phrase) -> String {
+fn build_phrase(phrase: &Phrase, string_cache: &StringCache) -> String {
     let mut tokens = vec![];
 
     for t in phrase.iter() {
+        let string = t.as_str(string_cache);
+
         tokens.push(format!(
             "{}{}{}{}",
             String::from("(").repeat(t.open_depth as usize),
             if t.is_negated { "!" } else { "" },
-            t.string,
+            string,
             String::from(")").repeat(t.close_depth as usize)
         ));
     }
@@ -1006,24 +1080,28 @@ fn build_phrase(phrase: &Phrase) -> String {
     return tokens.join(" ");
 }
 
-fn print_state(state: &Vec<Phrase>) {
-    for s in state.iter().map(|p| build_phrase(p)).collect::<Vec<_>>() {
+fn print_state(state: &Vec<Phrase>, string_cache: &StringCache) {
+    for s in state
+        .iter()
+        .map(|p| build_phrase(p, string_cache))
+        .collect::<Vec<_>>()
+    {
         println!("{}", s);
     }
 }
 
-fn rule_to_string(rule: &Rule) -> String {
+fn rule_to_string(rule: &Rule, string_cache: &StringCache) -> String {
     let inputs = rule
         .inputs
         .iter()
-        .map(|p| build_phrase(p))
+        .map(|p| build_phrase(p, string_cache))
         .collect::<Vec<_>>()
         .join(" . ");
 
     let outputs = rule
         .outputs
         .iter()
-        .map(|p| build_phrase(p))
+        .map(|p| build_phrase(p, string_cache))
         .collect::<Vec<_>>()
         .join(" . ");
 
