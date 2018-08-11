@@ -16,6 +16,8 @@ struct State {
     music: ray::Music,
 }
 
+static mut STATE: Option<State> = None;
+
 fn main() {
     ray::init_window(640, 480, "ld42");
     ray::init_audio_device();
@@ -26,18 +28,22 @@ fn main() {
 
     ray::play_music_stream(state.music);
 
+    unsafe { STATE = Some(std::mem::transmute(state)) };
+
     if cfg!(target_os = "emscripten") {
-        set_main_loop_callback(|| update_draw_frame(&mut state));
+        set_main_loop_callback(|| update_draw_frame());
     } else {
         while !ray::window_should_close() {
-            update_draw_frame(&mut state);
+            update_draw_frame();
         }
     }
 
     ray::close_window();
 }
 
-fn update_draw_frame(state: &mut State) {
+fn update_draw_frame() {
+    let state = unsafe { STATE.as_mut().unwrap() };
+
     ray::update_music_stream(state.music);
 
     ray::begin_drawing();
