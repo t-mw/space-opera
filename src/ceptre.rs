@@ -1,5 +1,6 @@
 use rand;
-use rand::{Rng, SeedableRng, StdRng};
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
 use regex::Regex;
 use string_cache::DefaultAtom as Atom;
 
@@ -117,7 +118,7 @@ pub struct Context {
     rules: Vec<Rule>,
     pub state: Vec<Phrase>,
     quiescence: bool,
-    rng: StdRng,
+    rng: SmallRng,
 }
 
 impl Context {
@@ -225,14 +226,26 @@ impl Context {
             .map(|v| v.expect("v"))
             .collect::<Vec<_>>();
 
-        let seed = vec![
-            rand::random::<usize>(),
-            rand::random::<usize>(),
-            rand::random::<usize>(),
-            rand::random::<usize>(),
+        let seed = [
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+            rand::random::<u8>(),
+            rand::random::<u8>(),
         ];
 
-        let rng = SeedableRng::from_seed(&seed[..]);
+        let rng = SmallRng::from_seed(seed);
 
         Context {
             state,
