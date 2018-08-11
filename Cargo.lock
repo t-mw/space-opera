@@ -1,0 +1,23 @@
+[[package]]
+name = "ld42"
+version = "0.1.0"
+dependencies = [
+ "raylib-rs 0.1.0 (git+https://github.com/t-mw/raylib-rs.git)",
+]
+
+[[package]]
+name = "libc"
+version = "0.2.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "raylib-rs"
+version = "0.1.0"
+source = "git+https://github.com/t-mw/raylib-rs.git#b3855aeb16edd9bc703940a5a063949d21eaf0e7"
+dependencies = [
+ "libc 0.2.43 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[metadata]
+"checksum libc 0.2.43 (registry+https://github.com/rust-lang/crates.io-index)" = "76e3a3ef172f1a0b9a9ff0dd1491ae5e6c948b94479a3021819ba7d860c8645d"
+"checksum raylib-rs 0.1.0 (git+https://github.com/t-mw/raylib-rs.git)" = "<none>"

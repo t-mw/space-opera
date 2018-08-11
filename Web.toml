@@ -1,0 +1,2 @@
+[target.emscripten]
+link-args = ["-s", "WASM=1", "-s", "USE_GLFW=3", "--preload-file", "assets", "lib/libraylib.bc"]
