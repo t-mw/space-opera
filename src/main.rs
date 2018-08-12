@@ -54,6 +54,7 @@ impl State {
 struct LevelSounds {
     level: i32,
     metronome: ray::Music,
+    complete: ray::Music,
     instruments: Vec<InstrumentSound>,
 }
 
@@ -100,6 +101,7 @@ fn update_draw_frame() {
 
     if let Some(ref sounds) = state.level_sounds {
         ray::update_music_stream(sounds.metronome);
+        ray::update_music_stream(sounds.complete);
         for instrument in sounds.instruments.iter() {
             ray::update_music_stream(instrument.sound);
         }
@@ -122,6 +124,12 @@ fn update_draw_frame() {
 
             ray::set_music_volume(metronome, 0.7);
             ray::set_music_loop_count(metronome, 0);
+
+            let complete =
+                ray::load_music_stream(&format!("assets/level{} complete.ogg", current_level + 1,));
+
+            ray::set_music_volume(complete, 0.7);
+            ray::set_music_loop_count(complete, 0);
 
             let instruments = state
                 .instruments(current_level)
@@ -176,6 +184,7 @@ fn update_draw_frame() {
             state.level_sounds = Some(LevelSounds {
                 level: current_level,
                 metronome,
+                complete,
                 instruments,
             })
         }
@@ -185,6 +194,40 @@ fn update_draw_frame() {
 
     let is_new_bar = state.beat_pos_for_time(time1) > beat_pos;
     let is_new_beat = state.beat_pos_for_time(time1).floor() as i32 != beat_pos.floor() as i32;
+
+    let instrument_count = state.instruments(current_level).len() as i32;
+
+    #[derive(Eq, PartialEq)]
+    enum NoteType {
+        Normal,
+        Temp,
+        None,
+    }
+
+    let has_notes = {
+        let mut v = vec![];
+        for _ in 0..instrument_count {
+            v.push(NoteType::None);
+        }
+
+        for note in state.ceptre_context.find_phrases(Some("note")).iter() {
+            let instrument = i32::from_str(note[1].as_str(&state.ceptre_context.string_cache))
+                .expect("instrument") as usize;
+
+            v[instrument] = NoteType::Normal;
+        }
+
+        for note in state.ceptre_context.find_phrases(Some("note-tmp")).iter() {
+            let instrument = i32::from_str(note[1].as_str(&state.ceptre_context.string_cache))
+                .expect("instrument") as usize;
+
+            v[instrument] = NoteType::Temp;
+        }
+
+        v
+    };
+
+    let is_level_complete = has_notes.iter().all(|v| *v == NoteType::Normal);
 
     if let Some(ref sounds) = state.level_sounds {
         // start metronome on first loop
@@ -228,41 +271,30 @@ fn update_draw_frame() {
                 ray::play_music_stream(sound);
             }
         }
+
+        // restart complete music
+        if is_level_complete && is_new_bar {
+            if is_new_bar {
+                if ray::is_music_playing(sounds.complete) {
+                    ray::stop_music_stream(sounds.complete);
+                }
+                ray::play_music_stream(sounds.complete);
+            }
+        }
     }
 
-    let instrument_count = state.instruments(current_level).len() as i32;
+    for (instrument, has_notes) in has_notes.iter().enumerate() {
+        if *has_notes == NoteType::None {
+            let level_sounds = state.level_sounds.as_ref().expect("level_sounds");
+            let sound = level_sounds
+                .instruments
+                .iter()
+                .find(|i| i.number == instrument as i32)
+                .expect("instrument")
+                .sound;
 
-    {
-        let mut has_notes = vec![];
-        for _ in 0..instrument_count {
-            has_notes.push(false);
-        }
-
-        for note in state
-            .ceptre_context
-            .find_phrases(Some("note"))
-            .iter()
-            .chain(state.ceptre_context.find_phrases(Some("note-tmp")).iter())
-        {
-            let instrument = i32::from_str(note[1].as_str(&state.ceptre_context.string_cache))
-                .expect("instrument") as usize;
-
-            has_notes[instrument] = true;
-        }
-
-        for (instrument, has_notes) in has_notes.iter().enumerate() {
-            if !has_notes {
-                let level_sounds = state.level_sounds.as_ref().expect("level_sounds");
-                let sound = level_sounds
-                    .instruments
-                    .iter()
-                    .find(|i| i.number == instrument as i32)
-                    .expect("instrument")
-                    .sound;
-
-                if ray::is_music_playing(sound) {
-                    ray::stop_music_stream(sound);
-                }
+            if ray::is_music_playing(sound) {
+                ray::stop_music_stream(sound);
             }
         }
     }
@@ -466,6 +498,17 @@ fn update_draw_frame() {
             origin,
             0.0,
             color,
+        );
+    }
+
+    if is_level_complete {
+        let width = ray::measure_text("Level Complete! Press Space to continue.", 20);
+        ray::draw_text(
+            "Level Complete! Press Space to continue.",
+            WIDTH / 2 - width / 2,
+            HEIGHT - 60,
+            20,
+            ray::WHITE,
         );
     }
 
