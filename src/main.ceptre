@@ -1,23 +1,47 @@
 current-level 0
+current-beat 0
 selected-instrument 0
 level-instrument-count 0 4
-level-instruments 0 0 (o (o (x (o (o (x (o (o (o (x (o (o (o (o (x (x ()))))))))))))))))
-level-instruments 0 1 (o (o (o (x (o (o (x (o (o (o (o (x (o (x (o (o ()))))))))))))))))
-level-instruments 0 2 (x (o (o (o (o (o (o (o (x (o (o (o (o (o (o (o ()))))))))))))))))
-level-instruments 0 3 (o (o (o (o (x (o (o (o (o (o (o (o (x (o (o (o ()))))))))))))))))
-level-instruments 1 3 (o (o (o (o (o (o (o (o (o (o (o (o (o (o (o (o ()))))))))))))))))
+level-instruments 0 0 (o (o (x (o (o (x (o (o (o (x (o (o (o (o (x (x))))))))))))))))
+level-instruments 0 1 (o (o (o (x (o (o (x (o (o (o (o (x (o (x))))))))))))))
+level-instruments 0 2 (x (o (o (o (o (o (o (o (x)))))))))
+level-instruments 0 3 (o (o (o (o (x (o (o (o (o (o (o (o (x)))))))))))))
+level-instruments 1 3 (o (o (o (o (o (o (o (o (o (o (o (o (o (o (o (o))))))))))))))))
 
 #input-place BEATPOS:
-  $current-level L . $selected-instrument INSTRUMENT . $level-instruments L INSTRUMENT NOTES . !placed INSTRUMENT = place INSTRUMENT NOTES BEATPOS true . placed INSTRUMENT
-  place INSTRUMENT (x NOTES) POS FIRST . + 1 POS POS2 . %% POS2 16 POS3 = place INSTRUMENT NOTES POS3 false . note INSTRUMENT POS FIRST
-  place INSTRUMENT (o NOTES) POS FIRST . !note INSTRUMENT EXISTINGPOS EXISTINGFIRST = place INSTRUMENT NOTES POS FIRST
-  place INSTRUMENT (o NOTES) POS FIRST . + 1 POS POS2 . %% POS2 16 POS3 . $note INSTRUMENT EXISTINGPOS EXISTINGFIRST = place INSTRUMENT NOTES POS3 FIRST
-  place INSTRUMENT () POS FIRST =
-  () = #clean
+  $selected-instrument INSTRUMENT . () = #clear INSTRUMENT (#input-place-after-clear BEATPOS)
+
+#input-place-after-clear BEATPOS:
+  $current-level L . $selected-instrument INSTRUMENT . $level-instruments L INSTRUMENT NOTES . !placed INSTRUMENT = place INSTRUMENT NOTES BEATPOS first . placed INSTRUMENT
+  place INSTRUMENT (x NOTES) POS DESC . + 1 POS POS2 . %% POS2 16 POS3 = place INSTRUMENT NOTES POS3 mid . note-tmp INSTRUMENT POS DESC
+  place INSTRUMENT (o NOTES) POS DESC . !note-tmp INSTRUMENT EXISTINGPOS EXISTINGDESC = place INSTRUMENT NOTES POS DESC
+  place INSTRUMENT (o NOTES) POS DESC . + 1 POS POS2 . %% POS2 16 POS3 . $note-tmp INSTRUMENT EXISTINGPOS EXISTINGDESC = place INSTRUMENT NOTES POS3 DESC
+  place INSTRUMENT (x) POS DESC = note-tmp INSTRUMENT POS last
+  place INSTRUMENT (o) POS DESC =
+  () = #clean-placed
+
+#clean-placed:
+  placed INSTRUMENT = #clear INSTRUMENT
+  () =
 
 #input-change-left . selected-instrument I . + I2 1 I . $current-level L . $level-instrument-count L N . %% I2 N I3 = selected-instrument I3
 #input-change-right . selected-instrument I . + I 1 I2 . $current-level L . $level-instrument-count L N . %% I2 N I3 = selected-instrument I3
 
-#clean:
-  placed INSTRUMENT =
+$current-beat BEAT . $note INSTRUMENT1 BEAT DESC1 . $note-tmp INSTRUMENT2 BEAT DESC2 = #clear INSTRUMENT2 #dummy . ^collide BEAT
+$current-beat BEAT . !note INSTRUMENT1 BEAT DESC1 . $note-tmp INSTRUMENT2 BEAT last = #set-tmp INSTRUMENT2
+
+$note-tmp INSTRUMENT1 BEAT DESC1 . $note-tmp INSTRUMENT2 BEAT DESC2 . !clearing-tmp-collision = #clear INSTRUMENT2 #cleared-tmp-collision . clearing-tmp-collision . ^collide BEAT
+#cleared-tmp-collision . clearing-tmp-collision =
+
+#set-beat BEAT . current-beat EXISTINGBEAT = current-beat BEAT
+
+#set-tmp INSTRUMENT:
+  note-tmp INSTRUMENT POS DESC = note INSTRUMENT POS DESC
   () =
+
+#clear INSTRUMENT RETURN:
+  note INSTRUMENT POS DESC =
+  note-tmp INSTRUMENT POS DESC =
+  () = RETURN
+
+#dummy =

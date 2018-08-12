@@ -24,6 +24,7 @@ struct State {
     ceptre_context: ceptre::Context,
     level_start_time: Option<f64>,
     level_sounds: Option<LevelSounds>,
+    collide_beat: Option<(i32, f64)>,
 }
 
 impl State {
@@ -75,6 +76,7 @@ fn main() {
         ceptre_context: ceptre::Context::from_text(include_str!("main.ceptre")),
         level_start_time: None,
         level_sounds: None,
+        collide_beat: None,
     };
 
     unsafe { STATE = Some(std::mem::transmute(state)) };
@@ -132,7 +134,7 @@ fn update_draw_frame() {
                     let o = state.ceptre_context.to_existing_atom("o").expect("o");
                     let x = state.ceptre_context.to_existing_atom("x").expect("x");
 
-                    let sequence = instrument[3..instrument.len() - 1]
+                    let mut sequence = instrument[3..instrument.len()]
                         .iter()
                         .map(|v| match &v.string {
                             v if *v == o => false,
@@ -140,6 +142,10 @@ fn update_draw_frame() {
                             _ => unreachable!(),
                         })
                         .collect::<Vec<_>>();
+
+                    while sequence.len() < 16 {
+                        sequence.push(false);
+                    }
 
                     let sequence_str = sequence
                         .iter()
@@ -177,56 +183,93 @@ fn update_draw_frame() {
 
     let beat_pos = state.beat_pos_for_time(state.time);
 
-    {
-        if let Some(ref sounds) = state.level_sounds {
-            // start metronome on first loop
-            if beat_pos < 1.0 && !ray::is_music_playing(sounds.metronome) {
-                ray::play_music_stream(sounds.metronome);
+    let is_new_bar = state.beat_pos_for_time(time1) > beat_pos;
+    let is_new_beat = state.beat_pos_for_time(time1).floor() as i32 != beat_pos.floor() as i32;
+
+    if let Some(ref sounds) = state.level_sounds {
+        // start metronome on first loop
+        if beat_pos < 1.0 && !ray::is_music_playing(sounds.metronome) {
+            ray::play_music_stream(sounds.metronome);
+        }
+
+        // restart metronome
+        if is_new_bar {
+            if ray::is_music_playing(sounds.metronome) {
+                ray::stop_music_stream(sounds.metronome);
             }
+            ray::play_music_stream(sounds.metronome);
+        }
 
-            let is_new_bar = state.beat_pos_for_time(time1) > beat_pos;
-            let is_new_beat =
-                state.beat_pos_for_time(time1).floor() as i32 != beat_pos.floor() as i32;
+        // restart music
+        if is_new_beat {
+            for note in state
+                .ceptre_context
+                .find_phrases4(
+                    Some("note"),
+                    None,
+                    Some(&beat_pos.floor().to_string()),
+                    Some("first"),
+                )
+                .iter()
+            {
+                let instrument = i32::from_str(note[1].as_str(&state.ceptre_context.string_cache))
+                    .expect("instrument");
 
-            // restart metronome
-            if is_new_bar {
-                if ray::is_music_playing(sounds.metronome) {
-                    ray::stop_music_stream(sounds.metronome);
-                }
-                ray::play_music_stream(sounds.metronome);
-            }
-
-            if is_new_beat {
-                for note in state
-                    .ceptre_context
-                    .find_phrases4(
-                        Some("note"),
-                        None,
-                        Some(&beat_pos.floor().to_string()),
-                        Some("true"),
-                    )
+                let sound = sounds
+                    .instruments
                     .iter()
-                {
-                    let instrument = i32::from_str(
-                        note[1].as_str(&state.ceptre_context.string_cache),
-                    ).expect("instrument");
+                    .find(|i| i.number == instrument)
+                    .expect("instrument")
+                    .sound;
 
-                    let sound = sounds
-                        .instruments
-                        .iter()
-                        .find(|i| i.number == instrument)
-                        .expect("instrument")
-                        .sound;
+                if ray::is_music_playing(sound) {
+                    ray::stop_music_stream(sound);
+                }
+                ray::play_music_stream(sound);
+            }
+        }
+    }
 
-                    // restart music
-                    if ray::is_music_playing(sound) {
-                        ray::stop_music_stream(sound);
-                    }
-                    ray::play_music_stream(sound);
+    let instrument_count = state.instruments(current_level).len() as i32;
+
+    {
+        let mut has_notes = vec![];
+        for _ in 0..instrument_count {
+            has_notes.push(false);
+        }
+
+        for note in state
+            .ceptre_context
+            .find_phrases(Some("note"))
+            .iter()
+            .chain(state.ceptre_context.find_phrases(Some("note-tmp")).iter())
+        {
+            let instrument = i32::from_str(note[1].as_str(&state.ceptre_context.string_cache))
+                .expect("instrument") as usize;
+
+            has_notes[instrument] = true;
+        }
+
+        for (instrument, has_notes) in has_notes.iter().enumerate() {
+            if !has_notes {
+                let level_sounds = state.level_sounds.as_ref().expect("level_sounds");
+                let sound = level_sounds
+                    .instruments
+                    .iter()
+                    .find(|i| i.number == instrument as i32)
+                    .expect("instrument")
+                    .sound;
+
+                if ray::is_music_playing(sound) {
+                    ray::stop_music_stream(sound);
                 }
             }
         }
     }
+
+    state
+        .ceptre_context
+        .append_state(&format!("#set-beat {}", beat_pos.floor() as i32));
 
     if ray::is_key_pressed(ray::KEY_SPACE) {
         state
@@ -236,7 +279,12 @@ fn update_draw_frame() {
         let selected_instrument = state.selected_instrument().expect("selected_instrument");
 
         let level_sounds = state.level_sounds.as_ref().expect("level_sounds");
-        ray::play_music_stream(level_sounds.instruments[selected_instrument as usize].sound);
+        let sound = level_sounds.instruments[selected_instrument as usize].sound;
+
+        if ray::is_music_playing(sound) {
+            ray::stop_music_stream(sound);
+        }
+        ray::play_music_stream(sound);
     }
 
     if ray::is_key_pressed(ray::KEY_LEFT) {
@@ -247,7 +295,25 @@ fn update_draw_frame() {
 
     // state.ceptre_context.print();
 
-    ceptre::update(&mut state.ceptre_context, |p: &ceptre::Phrase| None);
+    {
+        let collide_atom = state.ceptre_context.to_atom("^collide");
+        let mut collide_pos_atom = None;
+
+        ceptre::update(&mut state.ceptre_context, |p: &ceptre::Phrase| {
+            if collide_atom == p[0].string && collide_pos_atom.is_none() {
+                collide_pos_atom = Some(p[1].string);
+            }
+
+            None
+        });
+
+        if let Some(pos) = collide_pos_atom.map(|a| {
+            let s = state.ceptre_context.string_cache.from_atom(a);
+            i32::from_str(s).expect("pos")
+        }) {
+            state.collide_beat = Some((pos, state.time));
+        }
+    }
 
     ray::begin_drawing();
 
@@ -280,7 +346,28 @@ fn update_draw_frame() {
         ray::draw_rectangle_lines(x, y, note_width, note_height, color);
     }
 
-    let instrument_count = state.instruments(current_level).len() as i32;
+    for note in state.ceptre_context.find_phrases(Some("note-tmp")).iter() {
+        let string_cache = &state.ceptre_context.string_cache;
+        let instrument = i32::from_str(note[1].as_str(string_cache)).expect("instrument");
+        let pos = i32::from_str(note[2].as_str(string_cache)).expect("pos");
+
+        let x = min_x + pos * note_width;
+        let y = min_y;
+        let thickness = 4;
+        let color = instrument_color(instrument);
+
+        ray::draw_rectangle_lines_ex(
+            ray::Rectangle {
+                x: x as f32,
+                y: y as f32,
+                width: note_width as f32,
+                height: note_height as f32,
+            },
+            thickness,
+            color,
+        );
+    }
+
     for i in 0..instrument_count {
         let min_x = 100;
         let max_x = WIDTH - min_x;
@@ -295,6 +382,40 @@ fn update_draw_frame() {
         }
 
         ray::draw_circle(x, y, radius, ray::WHITE);
+    }
+
+    if let Some((pos, time)) = state.collide_beat {
+        let frac = ((state.time - time) as f32 / 0.567).min(1.0);
+
+        let x = (min_x + pos * note_width) as f32 + note_width as f32 * 0.5;
+        let y = min_y as f32 + note_height as f32 * 0.5;
+
+        let width = note_width as f32 * (1.0 + frac * 0.5);
+        let height = note_height as f32 * (1.0 + frac * 0.5);
+
+        let origin = ray::Vector2 {
+            x: width * 0.5,
+            y: height * 0.5,
+        };
+
+        let color = ray::Color {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: (255.0 * (1.0 - frac)) as u8,
+        };
+
+        ray::draw_rectangle_pro(
+            ray::Rectangle {
+                x: x as f32,
+                y: y as f32,
+                width,
+                height,
+            },
+            origin,
+            0.0,
+            color,
+        );
     }
 
     ray::end_drawing();
