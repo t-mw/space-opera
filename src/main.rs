@@ -402,7 +402,7 @@ fn update_draw_frame() {
     ray::clear_background(ray::BLACK);
 
     let instrument_color =
-        |idx: i32| [ray::BLUE, ray::GREEN, ray::ORANGE, ray::PURPLE][idx as usize];
+        |idx: i32| [ray::BLUE, ray::GREEN, ray::ORANGE, ray::PURPLE, ray::GRAY][idx as usize];
 
     let min_x = 40;
     let max_x = WIDTH - min_x;
@@ -423,7 +423,7 @@ fn update_draw_frame() {
     }
 
     {
-        let frac = (1.0 - 1.23 * ((beat_pos / 2.0) % 1.0)).max(0.0);
+        let frac = (1.0 - 1.23 * (beat_pos % 1.0)).max(0.0);
         let alpha = 0.2 + frac * 0.8;
 
         let x = min_x + (beat_pos.floor() as i32) * note_width;
@@ -431,6 +431,7 @@ fn update_draw_frame() {
         let color = ray::fade(ray::WHITE, alpha);
         ray::draw_rectangle(x, y, note_width, note_height, color);
         ray::draw_rectangle_lines(x, y, note_width, note_height, color);
+        ray::draw_rectangle(x, max_y, note_width, 10, ray::WHITE);
     }
 
     for note in state.ceptre_context.find_phrases(Some("note-tmp")).iter() {
