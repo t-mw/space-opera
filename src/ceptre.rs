@@ -356,8 +356,24 @@ impl Context {
         first: Option<&str>,
         second: Option<&str>,
     ) -> Option<&'a Phrase> {
-        let atom1 = first.and_then(|s| self.to_existing_atom(s));
-        let atom2 = second.and_then(|s| self.to_existing_atom(s));
+        let mut atom1 = None;
+        let mut atom2 = None;
+
+        if let Some(s) = first {
+            if let Some(atom) = self.to_existing_atom(s) {
+                atom1 = Some(atom);
+            } else {
+                return None;
+            }
+        };
+
+        if let Some(s) = second {
+            if let Some(atom) = self.to_existing_atom(s) {
+                atom2 = Some(atom);
+            } else {
+                return None;
+            }
+        };
 
         for p in self.state.iter() {
             match (p.get(0).map(|t| &t.string), p.get(1).map(|t| &t.string)) {
@@ -383,8 +399,24 @@ impl Context {
         first: Option<&str>,
         second: Option<&str>,
     ) -> Vec<&'a Phrase> {
-        let atom1 = first.and_then(|s| self.to_existing_atom(s));
-        let atom2 = second.and_then(|s| self.to_existing_atom(s));
+        let mut atom1 = None;
+        let mut atom2 = None;
+
+        if let Some(s) = first {
+            if let Some(atom) = self.to_existing_atom(s) {
+                atom1 = Some(atom);
+            } else {
+                return vec![];
+            }
+        };
+
+        if let Some(s) = second {
+            if let Some(atom) = self.to_existing_atom(s) {
+                atom2 = Some(atom);
+            } else {
+                return vec![];
+            }
+        };
 
         return self
             .state
