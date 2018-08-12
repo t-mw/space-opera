@@ -319,7 +319,8 @@ fn update_draw_frame() {
 
     ray::clear_background(ray::BLACK);
 
-    let instrument_color = |idx: i32| [ray::BLUE, ray::RED, ray::ORANGE, ray::PURPLE][idx as usize];
+    let instrument_color =
+        |idx: i32| [ray::BLUE, ray::GREEN, ray::ORANGE, ray::PURPLE][idx as usize];
 
     let min_x = 40;
     let max_x = WIDTH - min_x;
@@ -340,9 +341,13 @@ fn update_draw_frame() {
     }
 
     {
+        let frac = (1.0 - 1.23 * ((beat_pos / 2.0) % 1.0)).max(0.0);
+        let alpha = 0.2 + frac * 0.8;
+
         let x = min_x + (beat_pos.floor() as i32) * note_width;
         let y = min_y;
-        let color = ray::WHITE;
+        let color = ray::fade(ray::WHITE, alpha);
+        ray::draw_rectangle(x, y, note_width, note_height, color);
         ray::draw_rectangle_lines(x, y, note_width, note_height, color);
     }
 
@@ -374,14 +379,60 @@ fn update_draw_frame() {
 
         let x = min_x + i * (max_x - min_x) / (instrument_count - 1);
         let y = 50;
-        let radius = 10.0;
+        let radius = 5.0;
+        let radius2 = 10.0;
+        let frac = 1.0 - (beat_pos % 1.0);
 
         let selected_instrument = state.selected_instrument().expect("selected_instrument");
-        if i == selected_instrument {
-            ray::draw_circle(x, y, radius + 4.0, instrument_color(i));
-        }
+        let instrument_color = instrument_color(i);
 
-        ray::draw_circle(x, y, radius, ray::WHITE);
+        let frac = if state
+            .ceptre_context
+            .find_phrase3(
+                Some("note"),
+                Some(&i.to_string()),
+                Some(&beat_pos.floor().to_string()),
+            )
+            .is_some()
+            || state
+                .ceptre_context
+                .find_phrase3(
+                    Some("note-tmp"),
+                    Some(&i.to_string()),
+                    Some(&beat_pos.floor().to_string()),
+                )
+                .is_some()
+        {
+            frac
+        } else {
+            0.0
+        };
+
+        if state
+            .ceptre_context
+            .find_phrase2(Some("note"), Some(&i.to_string()))
+            .is_some()
+        {
+            let r = radius + radius2 * frac;
+
+            if i == selected_instrument {
+                ray::draw_circle(x, y, r + 4.0, instrument_color);
+                ray::draw_circle(x, y, r, ray::WHITE);
+            } else {
+                ray::draw_circle(x, y, r, instrument_color);
+            }
+        } else {
+            let r = radius + radius2 * frac;
+
+            if i == selected_instrument {
+                ray::draw_circle(x, y, r + 8.0, instrument_color);
+                ray::draw_circle(x, y, r + 4.0, ray::WHITE);
+                ray::draw_circle(x, y, r, ray::BLACK);
+            } else {
+                ray::draw_circle(x, y, r + 4.0, instrument_color);
+                ray::draw_circle(x, y, r, ray::BLACK);
+            }
+        }
     }
 
     if let Some((pos, time)) = state.collide_beat {
