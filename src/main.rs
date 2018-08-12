@@ -25,6 +25,22 @@ struct State {
     level_sounds: Option<LevelSounds>,
 }
 
+impl State {
+    fn instruments(&self, level: usize) -> Vec<&ceptre::Phrase> {
+        self.ceptre_context
+            .find_phrases2(Some("level-instruments"), Some(&level.to_string()))
+    }
+
+    fn selected_instrument(&self) -> Option<i32> {
+        self.ceptre_context
+            .find_phrase(Some("selected-instrument"))
+            .map(|p| {
+                i32::from_str(p[1].as_str(&self.ceptre_context.string_cache))
+                    .expect("selected_instrument")
+            })
+    }
+}
+
 struct LevelSounds {
     level: usize,
     metronome: ray::Music,
@@ -91,8 +107,7 @@ fn update_draw_frame() {
             ));
 
             let instruments = state
-                .ceptre_context
-                .find_phrases2(Some("level-instruments"), Some(&current_level.to_string()))
+                .instruments(current_level)
                 .iter()
                 .map(|instrument| {
                     let number = usize::from_str(
@@ -133,9 +148,6 @@ fn update_draw_frame() {
                 .collect::<Vec<_>>();
 
             ray::play_music_stream(metronome);
-            for instrument in instruments.iter() {
-                ray::play_music_stream(instrument.sound);
-            }
 
             state.level_sounds = Some(LevelSounds {
                 level: current_level,
@@ -146,8 +158,19 @@ fn update_draw_frame() {
     };
 
     if ray::is_key_pressed(ray::KEY_SPACE) {
-        state.ceptre_context.append_state("#place");
+        state.ceptre_context.append_state("#input-place");
+
+        let selected_instrument = state.selected_instrument().expect("selected_instrument");
+
+        let level_sounds = state.level_sounds.as_ref().expect("level_sounds");
+        ray::play_music_stream(level_sounds.instruments[selected_instrument as usize].sound);
     }
+
+    if ray::is_key_pressed(ray::KEY_LEFT) {
+        state.ceptre_context.append_state("#input-change-left");
+    } else if ray::is_key_pressed(ray::KEY_RIGHT) {
+        state.ceptre_context.append_state("#input-change-right");
+    };
 
     // state.ceptre_context.print();
 
@@ -156,6 +179,8 @@ fn update_draw_frame() {
     ray::begin_drawing();
 
     ray::clear_background(ray::BLACK);
+
+    let instrument_color = |idx: i32| [ray::BLUE, ray::RED, ray::ORANGE, ray::PURPLE][idx as usize];
 
     let min_x = 40;
     let max_x = WIDTH - min_x;
@@ -171,8 +196,8 @@ fn update_draw_frame() {
 
         let x = min_x + pos * note_width;
         let y = min_y;
-        let color = &[ray::BLUE, ray::RED, ray::ORANGE, ray::PURPLE][instrument as usize];
-        ray::draw_rectangle(x, y, note_width, note_height, *color);
+        let color = instrument_color(instrument);
+        ray::draw_rectangle(x, y, note_width, note_height, color);
     }
 
     if let Some(ref sounds) = state.level_sounds {
@@ -184,6 +209,23 @@ fn update_draw_frame() {
         let y = min_y;
         let color = ray::WHITE;
         ray::draw_rectangle_lines(x, y, note_width, note_height, color);
+    }
+
+    let instrument_count = state.instruments(current_level).len() as i32;
+    for i in 0..instrument_count {
+        let min_x = 100;
+        let max_x = WIDTH - min_x;
+
+        let x = min_x + i * (max_x - min_x) / (instrument_count - 1);
+        let y = 50;
+        let radius = 10.0;
+
+        let selected_instrument = state.selected_instrument().expect("selected_instrument");
+        if i == selected_instrument {
+            ray::draw_circle(x, y, radius + 4.0, instrument_color(i));
+        }
+
+        ray::draw_circle(x, y, radius, ray::WHITE);
     }
 
     ray::end_drawing();
