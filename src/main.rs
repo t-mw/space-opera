@@ -85,8 +85,10 @@ fn update_draw_frame() {
     match state.level_sounds {
         Some(LevelSounds { level, .. }) if level == current_level => (),
         _ => {
-            let metronome =
-                ray::load_music_stream(&format!("assets/level{} metronome.ogg", current_level,));
+            let metronome = ray::load_music_stream(&format!(
+                "assets/level{} metronome.ogg",
+                current_level + 1,
+            ));
 
             let instruments = state
                 .ceptre_context
@@ -117,7 +119,9 @@ fn update_draw_frame() {
 
                     let sound = ray::load_music_stream(&format!(
                         "assets/level{} {}-{}.ogg",
-                        current_level, number, sequence_str
+                        current_level + 1,
+                        number + 1,
+                        sequence_str
                     ));
 
                     InstrumentSound {
@@ -167,7 +171,7 @@ fn update_draw_frame() {
 
         let x = min_x + pos * note_width;
         let y = min_y;
-        let color = &[ray::BLUE, ray::RED, ray::ORANGE, ray::PURPLE][(instrument - 1) as usize];
+        let color = &[ray::BLUE, ray::RED, ray::ORANGE, ray::PURPLE][instrument as usize];
         ray::draw_rectangle(x, y, note_width, note_height, *color);
     }
 
