@@ -25,6 +25,7 @@ struct State {
     current_level: i32,
     levels: Vec<LevelSounds>,
     level_start_time: f64,
+    level_complete_time: Option<f64>,
     collide_beat: Option<(i32, f64)>,
 }
 
@@ -48,13 +49,18 @@ impl State {
 
     fn beat_pos_for_time(&self, level: i32, time: f64) -> f32 {
         let sounds = self.level_sounds(level).expect("level_sounds");
-        let frac = ((time - self.level_start_time) as f32
-            / ray::get_music_time_length(sounds.metronome)) % 1.0;
+
+        let ref_time = self.level_complete_time.unwrap_or(self.level_start_time);
+        let frac = ((time - ref_time) as f32 / ray::get_music_time_length(sounds.metronome)) % 1.0;
 
         16.0 * frac
     }
 
     fn reset_level(&mut self, level: i32) {
+        self.current_level = level;
+        self.level_start_time = self.time;
+        self.level_complete_time = None;
+
         self.ceptre_context.state.clear();
 
         self.ceptre_context.append_state("current-beat 0");
@@ -114,6 +120,7 @@ fn main() {
         current_level: 0,
         levels: create_levels(),
         level_start_time: ray::get_time(),
+        level_complete_time: None,
         collide_beat: None,
     };
 
@@ -131,9 +138,22 @@ fn main() {
 }
 
 fn create_levels() -> Vec<LevelSounds> {
-    vec![0]
-        .iter()
-        .map(|level| {
+    vec![
+        vec![
+            "0010010001000011",
+            "0001001000010100",
+            "1000000010000000",
+            "0000100000001000",
+        ],
+        vec![
+            "0010010001000011",
+            "0001001000010100",
+            "1000000010000000",
+            "0000100000001000",
+        ],
+    ].iter()
+        .enumerate()
+        .map(|(level, sequence_strings)| {
             let metronome =
                 ray::load_music_stream(&format!("assets/level{} metronome.ogg", level + 1,));
 
@@ -146,12 +166,8 @@ fn create_levels() -> Vec<LevelSounds> {
             ray::set_music_volume(complete, 0.7);
             ray::set_music_loop_count(complete, 0);
 
-            let instruments = vec![
-                "0010010001000011",
-                "0001001000010100",
-                "1000000010000000",
-                "0000100000001000",
-            ].iter()
+            let instruments = sequence_strings
+                .iter()
                 .enumerate()
                 .map(|(number, sequence_str)| {
                     let sound = ray::load_music_stream(&format!(
@@ -182,7 +198,7 @@ fn create_levels() -> Vec<LevelSounds> {
                 .collect();
 
             LevelSounds {
-                level: *level,
+                level: level as i32,
                 metronome,
                 complete,
                 instruments,
@@ -208,12 +224,6 @@ fn update_draw_frame() {
             ray::update_music_stream(instrument.sound);
         }
     }
-
-    let beat_pos = state.beat_pos_for_time(current_level, state.time);
-
-    let is_new_bar = state.beat_pos_for_time(current_level, time1) > beat_pos;
-    let is_new_beat =
-        state.beat_pos_for_time(current_level, time1).floor() as i32 != beat_pos.floor() as i32;
 
     let instrument_count = state.instruments().len() as i32;
 
@@ -248,6 +258,21 @@ fn update_draw_frame() {
     };
 
     let is_level_complete = has_notes.iter().all(|v| *v == NoteType::Normal);
+    let is_game_complete = is_level_complete && state.level_sounds(current_level + 1).is_none();
+
+    let mut is_new_bar = false;
+    let mut is_new_beat = false;
+    if is_level_complete && state.level_complete_time.is_none() {
+        state.level_complete_time = Some(state.time);
+        is_new_bar = true;
+        is_new_beat = true;
+    }
+
+    // calculate beat position after setting complete time to get correct values
+    let beat_pos = state.beat_pos_for_time(current_level, state.time);
+    let is_new_bar = is_new_bar || state.beat_pos_for_time(current_level, time1) > beat_pos;
+    let is_new_beat = is_new_beat
+        || state.beat_pos_for_time(current_level, time1).floor() as i32 != beat_pos.floor() as i32;
 
     if let Some(ref sounds) = state.level_sounds(current_level) {
         // start metronome on first loop
@@ -323,7 +348,12 @@ fn update_draw_frame() {
         .ceptre_context
         .append_state(&format!("#set-beat {}", beat_pos.floor() as i32));
 
-    if ray::is_key_pressed(ray::KEY_SPACE) {
+    if is_level_complete {
+        if !is_game_complete && ray::is_key_released(ray::KEY_SPACE) {
+            state.reset_level(current_level + 1);
+            return;
+        }
+    } else if ray::is_key_pressed(ray::KEY_SPACE) {
         state
             .ceptre_context
             .append_state(&format!("#input-place {}", beat_pos.floor() as i32));
@@ -429,7 +459,7 @@ fn update_draw_frame() {
         let min_x = 100;
         let max_x = WIDTH - min_x;
 
-        let x = min_x + i * (max_x - min_x) / (instrument_count - 1);
+        let x = min_x + i * (max_x - min_x) / (instrument_count - 1).max(1);
         let y = 50;
         let radius = 5.0;
         let radius2 = 10.0;
@@ -521,7 +551,16 @@ fn update_draw_frame() {
         );
     }
 
-    if is_level_complete {
+    if is_game_complete {
+        let width = ray::measure_text("Game Complete! Congratulations!", 20);
+        ray::draw_text(
+            "Game Complete! Congratulations!",
+            WIDTH / 2 - width / 2,
+            HEIGHT - 60,
+            20,
+            ray::WHITE,
+        );
+    } else if is_level_complete {
         let width = ray::measure_text("Level Complete! Press Space to continue.", 20);
         ray::draw_text(
             "Level Complete! Press Space to continue.",
