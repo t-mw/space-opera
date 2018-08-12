@@ -16,8 +16,8 @@ use std::ptr::null_mut;
 use std::str::FromStr;
 use std::vec::Vec;
 
-const WIDTH: i32 = 640;
-const HEIGHT: i32 = 480;
+const WIDTH: i32 = 800;
+const HEIGHT: i32 = 600;
 
 struct State {
     time: f64,
@@ -422,7 +422,7 @@ fn update_draw_frame() {
     let instrument_color =
         |idx: i32| [ray::BLUE, ray::GREEN, ray::ORANGE, ray::PURPLE, ray::GRAY][idx as usize];
 
-    let min_x = 40;
+    let min_x = 80;
     let max_x = WIDTH - min_x;
     let min_y = 100;
     let max_y = HEIGHT - min_y;
