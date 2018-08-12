@@ -22,6 +22,7 @@ const HEIGHT: i32 = 480;
 struct State {
     time: f64,
     ceptre_context: ceptre::Context,
+    error: ray::Sound,
     current_level: i32,
     levels: Vec<LevelSounds>,
     level_start_time: f64,
@@ -114,9 +115,13 @@ fn main() {
     ray::init_window(WIDTH, HEIGHT, "ld42");
     ray::init_audio_device();
 
+    let error = ray::load_sound("assets/error.ogg");
+    ray::set_sound_volume(error, 0.3);
+
     let mut state = State {
         time: ray::get_time(),
         ceptre_context: ceptre::Context::from_text(include_str!("main.ceptre")),
+        error,
         current_level: 0,
         levels: create_levels(),
         level_start_time: ray::get_time(),
@@ -394,6 +399,7 @@ fn update_draw_frame() {
             i32::from_str(s).expect("pos")
         }) {
             state.collide_beat = Some((pos, state.time));
+            ray::play_sound(state.error);
         }
     }
 
