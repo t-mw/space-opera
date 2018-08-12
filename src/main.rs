@@ -22,11 +22,12 @@ const HEIGHT: i32 = 480;
 struct State {
     time: f64,
     ceptre_context: ceptre::Context,
+    level_start_time: Option<f64>,
     level_sounds: Option<LevelSounds>,
 }
 
 impl State {
-    fn instruments(&self, level: usize) -> Vec<&ceptre::Phrase> {
+    fn instruments(&self, level: i32) -> Vec<&ceptre::Phrase> {
         self.ceptre_context
             .find_phrases2(Some("level-instruments"), Some(&level.to_string()))
     }
@@ -39,17 +40,27 @@ impl State {
                     .expect("selected_instrument")
             })
     }
+
+    fn beat_pos_for_time(&self, time: f64) -> f32 {
+        let sounds = self.level_sounds.as_ref().expect("level_sounds");
+        let frac = ((time - self.level_start_time.expect("level_start_time")) as f32
+            / ray::get_music_time_length(sounds.metronome)) % 1.0;
+
+        16.0 * frac
+    }
 }
 
 struct LevelSounds {
-    level: usize,
+    level: i32,
     metronome: ray::Music,
     instruments: Vec<InstrumentSound>,
 }
 
 struct InstrumentSound {
-    number: usize,
+    number: i32,
     sequence: Vec<bool>,
+    // sounds are named with sequence starting from beat 0,
+    // but are recorded from the first beat that is non-empty
     sound: ray::Music,
 }
 
@@ -62,6 +73,7 @@ fn main() {
     let state = State {
         time: ray::get_time(),
         ceptre_context: ceptre::Context::from_text(include_str!("main.ceptre")),
+        level_start_time: None,
         level_sounds: None,
     };
 
@@ -79,8 +91,8 @@ fn main() {
 fn update_draw_frame() {
     let state = unsafe { STATE.as_mut().unwrap() };
 
-    let time1 = ray::get_time();
-    let time2 = state.time;
+    let time1 = state.time;
+    let time2 = ray::get_time();
     let dt = (time2 - time1) as f32;
     state.time = time2;
 
@@ -94,7 +106,7 @@ fn update_draw_frame() {
     let current_level = state
         .ceptre_context
         .find_phrase(Some("current-level"))
-        .map(|p| usize::from_str(p[1].as_str(&state.ceptre_context.string_cache)).unwrap())
+        .map(|p| i32::from_str(p[1].as_str(&state.ceptre_context.string_cache)).unwrap())
         .expect("current_level");
 
     // create sounds
@@ -106,11 +118,14 @@ fn update_draw_frame() {
                 current_level + 1,
             ));
 
+            ray::set_music_volume(metronome, 0.7);
+            ray::set_music_loop_count(metronome, 0);
+
             let instruments = state
                 .instruments(current_level)
                 .iter()
                 .map(|instrument| {
-                    let number = usize::from_str(
+                    let number = i32::from_str(
                         instrument[2].as_str(&state.ceptre_context.string_cache),
                     ).unwrap();
 
@@ -139,6 +154,9 @@ fn update_draw_frame() {
                         sequence_str
                     ));
 
+                    ray::set_music_volume(sound, 0.7);
+                    ray::set_music_loop_count(sound, 0);
+
                     InstrumentSound {
                         number,
                         sequence,
@@ -147,7 +165,7 @@ fn update_draw_frame() {
                 })
                 .collect::<Vec<_>>();
 
-            ray::play_music_stream(metronome);
+            state.level_start_time = Some(state.time);
 
             state.level_sounds = Some(LevelSounds {
                 level: current_level,
@@ -157,8 +175,63 @@ fn update_draw_frame() {
         }
     };
 
+    let beat_pos = state.beat_pos_for_time(state.time);
+
+    {
+        if let Some(ref sounds) = state.level_sounds {
+            // start metronome on first loop
+            if beat_pos < 1.0 && !ray::is_music_playing(sounds.metronome) {
+                ray::play_music_stream(sounds.metronome);
+            }
+
+            let is_new_bar = state.beat_pos_for_time(time1) > beat_pos;
+            let is_new_beat =
+                state.beat_pos_for_time(time1).floor() as i32 != beat_pos.floor() as i32;
+
+            // restart metronome
+            if is_new_bar {
+                if ray::is_music_playing(sounds.metronome) {
+                    ray::stop_music_stream(sounds.metronome);
+                }
+                ray::play_music_stream(sounds.metronome);
+            }
+
+            if is_new_beat {
+                for note in state
+                    .ceptre_context
+                    .find_phrases4(
+                        Some("note"),
+                        None,
+                        Some(&beat_pos.floor().to_string()),
+                        Some("true"),
+                    )
+                    .iter()
+                {
+                    let instrument = i32::from_str(
+                        note[1].as_str(&state.ceptre_context.string_cache),
+                    ).expect("instrument");
+
+                    let sound = sounds
+                        .instruments
+                        .iter()
+                        .find(|i| i.number == instrument)
+                        .expect("instrument")
+                        .sound;
+
+                    // restart music
+                    if ray::is_music_playing(sound) {
+                        ray::stop_music_stream(sound);
+                    }
+                    ray::play_music_stream(sound);
+                }
+            }
+        }
+    }
+
     if ray::is_key_pressed(ray::KEY_SPACE) {
-        state.ceptre_context.append_state("#input-place");
+        state
+            .ceptre_context
+            .append_state(&format!("#input-place {}", beat_pos.floor() as i32));
 
         let selected_instrument = state.selected_instrument().expect("selected_instrument");
 
@@ -200,12 +273,8 @@ fn update_draw_frame() {
         ray::draw_rectangle(x, y, note_width, note_height, color);
     }
 
-    if let Some(ref sounds) = state.level_sounds {
-        let played = ray::get_music_time_played(sounds.metronome);
-        let length = ray::get_music_time_length(sounds.metronome);
-
-        let pos = (16.0 * (played / length)) as i32;
-        let x = min_x + pos * note_width;
+    {
+        let x = min_x + (beat_pos.floor() as i32) * note_width;
         let y = min_y;
         let color = ray::WHITE;
         ray::draw_rectangle_lines(x, y, note_width, note_height, color);
@@ -229,6 +298,13 @@ fn update_draw_frame() {
     }
 
     ray::end_drawing();
+}
+
+fn beat_pos_for_sound(sound: &ray::Music) -> f32 {
+    let played = ray::get_music_time_played(*sound);
+    let length = ray::get_music_time_length(*sound);
+
+    16.0 * (played / length)
 }
 
 extern "C" {

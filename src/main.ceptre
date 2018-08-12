@@ -7,11 +7,12 @@ level-instruments 0 2 (x (o (o (o (o (o (o (o (x (o (o (o (o (o (o (o ()))))))))
 level-instruments 0 3 (o (o (o (o (x (o (o (o (o (o (o (o (x (o (o (o ()))))))))))))))))
 level-instruments 1 3 (o (o (o (o (o (o (o (o (o (o (o (o (o (o (o (o ()))))))))))))))))
 
-#input-place:
-  $current-level L . $selected-instrument INSTRUMENT . $level-instruments L INSTRUMENT NOTES . !placed INSTRUMENT = place INSTRUMENT NOTES 0 . placed INSTRUMENT
-  place INSTRUMENT (x NOTES) POS . + 1 POS POS2 = place INSTRUMENT NOTES POS2 . note INSTRUMENT POS
-  place INSTRUMENT (o NOTES) POS . + 1 POS POS2 = place INSTRUMENT NOTES POS2
-  place INSTRUMENT () POS =
+#input-place BEATPOS:
+  $current-level L . $selected-instrument INSTRUMENT . $level-instruments L INSTRUMENT NOTES . !placed INSTRUMENT = place INSTRUMENT NOTES BEATPOS true . placed INSTRUMENT
+  place INSTRUMENT (x NOTES) POS FIRST . + 1 POS POS2 . %% POS2 16 POS3 = place INSTRUMENT NOTES POS3 false . note INSTRUMENT POS FIRST
+  place INSTRUMENT (o NOTES) POS FIRST . !note INSTRUMENT EXISTINGPOS EXISTINGFIRST = place INSTRUMENT NOTES POS FIRST
+  place INSTRUMENT (o NOTES) POS FIRST . + 1 POS POS2 . %% POS2 16 POS3 . $note INSTRUMENT EXISTINGPOS EXISTINGFIRST = place INSTRUMENT NOTES POS3 FIRST
+  place INSTRUMENT () POS FIRST =
   () = #clean
 
 #input-change-left . selected-instrument I . + I2 1 I . $current-level L . $level-instrument-count L N . %% I2 N I3 = selected-instrument I3
