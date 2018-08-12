@@ -275,6 +275,14 @@ fn update_draw_frame() {
         state.level_complete_time = Some(state.time);
         is_new_bar = true;
         is_new_beat = true;
+
+        for level in state.levels.iter() {
+            for instrument in level.instruments.iter() {
+                if ray::is_music_playing(instrument.sound) {
+                    ray::stop_music_stream(instrument.sound);
+                }
+            }
+        }
     }
 
     // calculate beat position after setting complete time to get correct values
