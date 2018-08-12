@@ -22,15 +22,19 @@ const HEIGHT: i32 = 480;
 struct State {
     time: f64,
     ceptre_context: ceptre::Context,
-    level_start_time: Option<f64>,
-    level_sounds: Option<LevelSounds>,
+    current_level: i32,
+    levels: Vec<LevelSounds>,
+    level_start_time: f64,
     collide_beat: Option<(i32, f64)>,
 }
 
 impl State {
-    fn instruments(&self, level: i32) -> Vec<&ceptre::Phrase> {
-        self.ceptre_context
-            .find_phrases2(Some("level-instruments"), Some(&level.to_string()))
+    fn level_sounds<'a>(&'a self, level: i32) -> Option<&'a LevelSounds> {
+        self.levels.get(level as usize)
+    }
+
+    fn instruments(&self) -> Vec<&ceptre::Phrase> {
+        self.ceptre_context.find_phrases(Some("level-instruments"))
     }
 
     fn selected_instrument(&self) -> Option<i32> {
@@ -42,12 +46,44 @@ impl State {
             })
     }
 
-    fn beat_pos_for_time(&self, time: f64) -> f32 {
-        let sounds = self.level_sounds.as_ref().expect("level_sounds");
-        let frac = ((time - self.level_start_time.expect("level_start_time")) as f32
+    fn beat_pos_for_time(&self, level: i32, time: f64) -> f32 {
+        let sounds = self.level_sounds(level).expect("level_sounds");
+        let frac = ((time - self.level_start_time) as f32
             / ray::get_music_time_length(sounds.metronome)) % 1.0;
 
         16.0 * frac
+    }
+
+    fn reset_level(&mut self, level: i32) {
+        self.ceptre_context.state.clear();
+
+        self.ceptre_context.append_state("current-beat 0");
+        self.ceptre_context.append_state("selected-instrument 0");
+
+        let instrument_count = &self
+            .level_sounds(level)
+            .expect("level_sounds")
+            .instruments
+            .len();
+
+        for i in 0..*instrument_count {
+            let mut sequence_str = "".to_string();
+
+            for v in self.level_sounds(level).expect("level_sounds").instruments[i]
+                .sequence
+                .iter()
+                .rev()
+                .skip_while(|v| !*v)
+            {
+                sequence_str = format!("({} {})", if *v { "x" } else { "o" }, sequence_str);
+            }
+
+            self.ceptre_context
+                .append_state(&format!("level-instruments {} {}", i, sequence_str));
+        }
+
+        self.ceptre_context
+            .append_state(&format!("level-instrument-count {}", instrument_count));
     }
 }
 
@@ -72,13 +108,16 @@ fn main() {
     ray::init_window(WIDTH, HEIGHT, "ld42");
     ray::init_audio_device();
 
-    let state = State {
+    let mut state = State {
         time: ray::get_time(),
         ceptre_context: ceptre::Context::from_text(include_str!("main.ceptre")),
-        level_start_time: None,
-        level_sounds: None,
+        current_level: 0,
+        levels: create_levels(),
+        level_start_time: ray::get_time(),
         collide_beat: None,
     };
+
+    state.reset_level(0);
 
     unsafe { STATE = Some(std::mem::transmute(state)) };
 
@@ -91,6 +130,67 @@ fn main() {
     }
 }
 
+fn create_levels() -> Vec<LevelSounds> {
+    vec![0]
+        .iter()
+        .map(|level| {
+            let metronome =
+                ray::load_music_stream(&format!("assets/level{} metronome.ogg", level + 1,));
+
+            ray::set_music_volume(metronome, 0.7);
+            ray::set_music_loop_count(metronome, 0);
+
+            let complete =
+                ray::load_music_stream(&format!("assets/level{} complete.ogg", level + 1,));
+
+            ray::set_music_volume(complete, 0.7);
+            ray::set_music_loop_count(complete, 0);
+
+            let instruments = vec![
+                "0010010001000011",
+                "0001001000010100",
+                "1000000010000000",
+                "0000100000001000",
+            ].iter()
+                .enumerate()
+                .map(|(number, sequence_str)| {
+                    let sound = ray::load_music_stream(&format!(
+                        "assets/level{} {}-{}.ogg",
+                        level + 1,
+                        number + 1,
+                        sequence_str
+                    ));
+
+                    ray::set_music_volume(sound, 0.7);
+                    ray::set_music_loop_count(sound, 0);
+
+                    let sequence = sequence_str
+                        .chars()
+                        .map(|c| match c {
+                            '0' => false,
+                            '1' => true,
+                            _ => unreachable!(),
+                        })
+                        .collect();
+
+                    InstrumentSound {
+                        number: number as i32,
+                        sequence,
+                        sound,
+                    }
+                })
+                .collect();
+
+            LevelSounds {
+                level: *level,
+                metronome,
+                complete,
+                instruments,
+            }
+        })
+        .collect()
+}
+
 fn update_draw_frame() {
     let state = unsafe { STATE.as_mut().unwrap() };
 
@@ -99,7 +199,9 @@ fn update_draw_frame() {
     let dt = (time2 - time1) as f32;
     state.time = time2;
 
-    if let Some(ref sounds) = state.level_sounds {
+    let current_level = state.current_level;
+
+    if let Some(ref sounds) = state.level_sounds(current_level) {
         ray::update_music_stream(sounds.metronome);
         ray::update_music_stream(sounds.complete);
         for instrument in sounds.instruments.iter() {
@@ -107,95 +209,13 @@ fn update_draw_frame() {
         }
     }
 
-    let current_level = state
-        .ceptre_context
-        .find_phrase(Some("current-level"))
-        .map(|p| i32::from_str(p[1].as_str(&state.ceptre_context.string_cache)).unwrap())
-        .expect("current_level");
+    let beat_pos = state.beat_pos_for_time(current_level, state.time);
 
-    // create sounds
-    match state.level_sounds {
-        Some(LevelSounds { level, .. }) if level == current_level => (),
-        _ => {
-            let metronome = ray::load_music_stream(&format!(
-                "assets/level{} metronome.ogg",
-                current_level + 1,
-            ));
+    let is_new_bar = state.beat_pos_for_time(current_level, time1) > beat_pos;
+    let is_new_beat =
+        state.beat_pos_for_time(current_level, time1).floor() as i32 != beat_pos.floor() as i32;
 
-            ray::set_music_volume(metronome, 0.7);
-            ray::set_music_loop_count(metronome, 0);
-
-            let complete =
-                ray::load_music_stream(&format!("assets/level{} complete.ogg", current_level + 1,));
-
-            ray::set_music_volume(complete, 0.7);
-            ray::set_music_loop_count(complete, 0);
-
-            let instruments = state
-                .instruments(current_level)
-                .iter()
-                .map(|instrument| {
-                    let number = i32::from_str(
-                        instrument[2].as_str(&state.ceptre_context.string_cache),
-                    ).unwrap();
-
-                    let o = state.ceptre_context.to_existing_atom("o").expect("o");
-                    let x = state.ceptre_context.to_existing_atom("x").expect("x");
-
-                    let mut sequence = instrument[3..instrument.len()]
-                        .iter()
-                        .map(|v| match &v.string {
-                            v if *v == o => false,
-                            v if *v == x => true,
-                            _ => unreachable!(),
-                        })
-                        .collect::<Vec<_>>();
-
-                    while sequence.len() < 16 {
-                        sequence.push(false);
-                    }
-
-                    let sequence_str = sequence
-                        .iter()
-                        .map(|v| if *v { "1" } else { "0" })
-                        .collect::<Vec<_>>()
-                        .join("");
-
-                    let sound = ray::load_music_stream(&format!(
-                        "assets/level{} {}-{}.ogg",
-                        current_level + 1,
-                        number + 1,
-                        sequence_str
-                    ));
-
-                    ray::set_music_volume(sound, 0.7);
-                    ray::set_music_loop_count(sound, 0);
-
-                    InstrumentSound {
-                        number,
-                        sequence,
-                        sound,
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            state.level_start_time = Some(state.time);
-
-            state.level_sounds = Some(LevelSounds {
-                level: current_level,
-                metronome,
-                complete,
-                instruments,
-            })
-        }
-    };
-
-    let beat_pos = state.beat_pos_for_time(state.time);
-
-    let is_new_bar = state.beat_pos_for_time(time1) > beat_pos;
-    let is_new_beat = state.beat_pos_for_time(time1).floor() as i32 != beat_pos.floor() as i32;
-
-    let instrument_count = state.instruments(current_level).len() as i32;
+    let instrument_count = state.instruments().len() as i32;
 
     #[derive(Eq, PartialEq)]
     enum NoteType {
@@ -229,7 +249,7 @@ fn update_draw_frame() {
 
     let is_level_complete = has_notes.iter().all(|v| *v == NoteType::Normal);
 
-    if let Some(ref sounds) = state.level_sounds {
+    if let Some(ref sounds) = state.level_sounds(current_level) {
         // start metronome on first loop
         if beat_pos < 1.0 && !ray::is_music_playing(sounds.metronome) {
             ray::play_music_stream(sounds.metronome);
@@ -285,7 +305,7 @@ fn update_draw_frame() {
 
     for (instrument, has_notes) in has_notes.iter().enumerate() {
         if *has_notes == NoteType::None {
-            let level_sounds = state.level_sounds.as_ref().expect("level_sounds");
+            let level_sounds = state.level_sounds(current_level).expect("level_sounds");
             let sound = level_sounds
                 .instruments
                 .iter()
@@ -310,7 +330,7 @@ fn update_draw_frame() {
 
         let selected_instrument = state.selected_instrument().expect("selected_instrument");
 
-        let level_sounds = state.level_sounds.as_ref().expect("level_sounds");
+        let level_sounds = state.level_sounds(current_level).expect("level_sounds");
         let sound = level_sounds.instruments[selected_instrument as usize].sound;
 
         if ray::is_music_playing(sound) {

@@ -1,18 +1,8 @@
-current-level 0
-current-beat 0
-selected-instrument 0
-level-instrument-count 0 4
-level-instruments 0 0 (o (o (x (o (o (x (o (o (o (x (o (o (o (o (x (x))))))))))))))))
-level-instruments 0 1 (o (o (o (x (o (o (x (o (o (o (o (x (o (x))))))))))))))
-level-instruments 0 2 (x (o (o (o (o (o (o (o (x)))))))))
-level-instruments 0 3 (o (o (o (o (x (o (o (o (o (o (o (o (x)))))))))))))
-level-instruments 1 3 (o (o (o (o (o (o (o (o (o (o (o (o (o (o (o (o))))))))))))))))
-
 #input-place BEATPOS:
   $selected-instrument INSTRUMENT . () = #clear INSTRUMENT (#input-place-after-clear BEATPOS)
 
 #input-place-after-clear BEATPOS:
-  $current-level L . $selected-instrument INSTRUMENT . $level-instruments L INSTRUMENT NOTES . !placed INSTRUMENT = place INSTRUMENT NOTES BEATPOS first . placed INSTRUMENT
+  $selected-instrument INSTRUMENT . $level-instruments INSTRUMENT NOTES . !placed INSTRUMENT = place INSTRUMENT NOTES BEATPOS first . placed INSTRUMENT
   place INSTRUMENT (x NOTES) POS DESC . + 1 POS POS2 . %% POS2 16 POS3 = place INSTRUMENT NOTES POS3 mid . note-tmp INSTRUMENT POS DESC
   place INSTRUMENT (o NOTES) POS DESC . !note-tmp INSTRUMENT EXISTINGPOS EXISTINGDESC = place INSTRUMENT NOTES POS DESC
   place INSTRUMENT (o NOTES) POS DESC . + 1 POS POS2 . %% POS2 16 POS3 . $note-tmp INSTRUMENT EXISTINGPOS EXISTINGDESC = place INSTRUMENT NOTES POS3 DESC
@@ -24,8 +14,8 @@ level-instruments 1 3 (o (o (o (o (o (o (o (o (o (o (o (o (o (o (o (o)))))))))))
   placed INSTRUMENT = #clear INSTRUMENT
   () =
 
-#input-change-left . selected-instrument I . + I2 1 I . $current-level L . $level-instrument-count L N . %% I2 N I3 = selected-instrument I3
-#input-change-right . selected-instrument I . + I 1 I2 . $current-level L . $level-instrument-count L N . %% I2 N I3 = selected-instrument I3
+#input-change-left . selected-instrument I . + I2 1 I . $level-instrument-count N . %% I2 N I3 = selected-instrument I3
+#input-change-right . selected-instrument I . + I 1 I2 . $level-instrument-count N . %% I2 N I3 = selected-instrument I3
 
 $current-beat BEAT . $note INSTRUMENT1 BEAT DESC1 . $note-tmp INSTRUMENT2 BEAT DESC2 = #clear INSTRUMENT2 #dummy . ^collide BEAT
 $current-beat BEAT . !note INSTRUMENT1 BEAT DESC1 . $note-tmp INSTRUMENT2 BEAT last = #set-tmp INSTRUMENT2
