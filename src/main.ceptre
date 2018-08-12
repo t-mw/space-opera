@@ -1,7 +1,17 @@
-(current-level 1)
-(level-instruments 1 1 (o o x o o x o o o x o o o o x x))
-(level-instruments 1 2 (o o o x o o x o o o o x o x o o))
-(level-instruments 1 3 (x o o o o o o o x o o o o o o o))
-(level-instruments 1 4 (o o o o x o o o o o o o x o o o))
+current-level 1
+level-instruments 1 1 (o (o (x (o (o (x (o (o (o (x (o (o (o (o (x (x ()))))))))))))))))
+level-instruments 1 2 (o (o (o (x (o (o (x (o (o (o (o (x (o (x (o (o ()))))))))))))))))
+level-instruments 1 3 (x (o (o (o (o (o (o (o (x (o (o (o (o (o (o (o ()))))))))))))))))
+level-instruments 1 4 (o (o (o (o (x (o (o (o (o (o (o (o (x (o (o (o ()))))))))))))))))
+level-instruments 2 4 (o (o (o (o (o (o (o (o (o (o (o (o (o (o (o (o ()))))))))))))))))
 
-(level-instruments 2 4 (o o o o o o o o o o o o o o o o))
+#place:
+  $current-level L . $level-instruments L INSTRUMENT NOTES . !placed INSTRUMENT = place INSTRUMENT NOTES 0 . placed INSTRUMENT
+  place INSTRUMENT (x NOTES) POS . + 1 POS POS2 = place INSTRUMENT NOTES POS2 . note INSTRUMENT POS
+  place INSTRUMENT (o NOTES) POS . + 1 POS POS2 = place INSTRUMENT NOTES POS2
+  place INSTRUMENT () POS =
+  () = #clean
+
+#clean:
+  placed INSTRUMENT =
+  () =

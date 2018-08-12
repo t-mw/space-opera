@@ -16,6 +16,9 @@ use std::ptr::null_mut;
 use std::str::FromStr;
 use std::vec::Vec;
 
+const WIDTH: i32 = 640;
+const HEIGHT: i32 = 480;
+
 struct State {
     time: f64,
     ceptre_context: ceptre::Context,
@@ -37,7 +40,7 @@ struct InstrumentSound {
 static mut STATE: Option<State> = None;
 
 fn main() {
-    ray::init_window(640, 480, "ld42");
+    ray::init_window(WIDTH, HEIGHT, "ld42");
     ray::init_audio_device();
 
     let state = State {
@@ -72,8 +75,6 @@ fn update_draw_frame() {
         }
     }
 
-    ceptre::update(&mut state.ceptre_context, |p: &ceptre::Phrase| None);
-
     let current_level = state
         .ceptre_context
         .find_phrase(Some("current-level"))
@@ -99,7 +100,7 @@ fn update_draw_frame() {
                     let o = state.ceptre_context.to_existing_atom("o").expect("o");
                     let x = state.ceptre_context.to_existing_atom("x").expect("x");
 
-                    let sequence = instrument[3..]
+                    let sequence = instrument[3..instrument.len() - 1]
                         .iter()
                         .map(|v| match &v.string {
                             v if *v == o => false,
@@ -140,10 +141,46 @@ fn update_draw_frame() {
         }
     };
 
+    if ray::is_key_pressed(ray::KEY_SPACE) {
+        state.ceptre_context.append_state("#place");
+    }
+
+    // state.ceptre_context.print();
+
+    ceptre::update(&mut state.ceptre_context, |p: &ceptre::Phrase| None);
+
     ray::begin_drawing();
 
     ray::clear_background(ray::BLACK);
-    ray::draw_text("Hello, world!", 12, 12, 20, ray::WHITE);
+
+    let min_x = 40;
+    let max_x = WIDTH - min_x;
+    let min_y = 100;
+    let max_y = HEIGHT - min_y;
+    let note_width = (max_x - min_x) / 16;
+    let note_height = max_y - min_y;
+
+    for note in state.ceptre_context.find_phrases(Some("note")).iter() {
+        let string_cache = &state.ceptre_context.string_cache;
+        let instrument = i32::from_str(note[1].as_str(string_cache)).expect("instrument");
+        let pos = i32::from_str(note[2].as_str(string_cache)).expect("pos");
+
+        let x = min_x + pos * note_width;
+        let y = min_y;
+        let color = &[ray::BLUE, ray::RED, ray::ORANGE, ray::PURPLE][(instrument - 1) as usize];
+        ray::draw_rectangle(x, y, note_width, note_height, *color);
+    }
+
+    if let Some(ref sounds) = state.level_sounds {
+        let played = ray::get_music_time_played(sounds.metronome);
+        let length = ray::get_music_time_length(sounds.metronome);
+
+        let pos = (16.0 * (played / length)) as i32;
+        let x = min_x + pos * note_width;
+        let y = min_y;
+        let color = ray::WHITE;
+        ray::draw_rectangle_lines(x, y, note_width, note_height, color);
+    }
 
     ray::end_drawing();
 }
