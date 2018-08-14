@@ -278,9 +278,9 @@ fn update_draw_frame() {
 
         for level in state.levels.iter() {
             for instrument in level.instruments.iter() {
-                if ray::is_music_playing(instrument.sound) {
-                    ray::stop_music_stream(instrument.sound);
-                }
+                // set volume to 0 instead of using StopMusicStream,
+                // which doesn't seem to work in WebAssembly.
+                ray::set_music_volume(instrument.sound, 0.0);
             }
         }
     }
@@ -330,6 +330,7 @@ fn update_draw_frame() {
                 if ray::is_music_playing(sound) {
                     ray::stop_music_stream(sound);
                 }
+                ray::set_music_volume(sound, 0.7);
                 ray::play_music_stream(sound);
             }
         }
@@ -383,6 +384,7 @@ fn update_draw_frame() {
         if ray::is_music_playing(sound) {
             ray::stop_music_stream(sound);
         }
+        ray::set_music_volume(sound, 0.7);
         ray::play_music_stream(sound);
     }
 
